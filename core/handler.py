@@ -23,13 +23,33 @@ class ClientWrapper:
 
         packetSize: bytes = len(data).to_bytes(4, 'big')
         self.connection.send(packetSize)
-        self.connection.sendall(data)
+        byte_sended: int = 0
+
+        while byte_sended < len(data):
+            sent = self.connection.send(data[byte_sended:byte_sended + 1024])
+
+            if (sent == 0):
+                raise RuntimeError('Socket connection broken')
+
+            byte_sended += sent
 
         return int.from_bytes(packetSize, 'big')
 
     def receive_packet(self) -> bytes:
         packetSize: int = int.from_bytes(self.connection.recv(4), 'big')
-        return self.connection.recv(packetSize)
+
+        data, total_received = bytearray(), 0
+
+        while total_received < packetSize:
+            chunk = self.connection.recv(min(1024, packetSize - total_received))
+
+            if not chunk:
+                raise RuntimeError('Socket connection broken')
+
+            data.extend(chunk)
+            total_received += len(chunk)
+
+        return bytes(data)
 
     def connect(self) -> None:
         return self.connection.connect(self.connectionAddress)
@@ -109,14 +129,21 @@ class ClientHandler(threading.Thread):
         self.connectionBucket = connectionBucket
         self.isConnected: bool = True
 
+    def disconnect_client(self) -> None:
+        logger.info(f'{self.conneciton.publib_address} ({self.conneciton.hostname}) just leave the server')
+        self.connectionBucket.connectionList.remove(self.conneciton)
+        self.isConnected = False
+
     def run(self) -> None:
         while self.isConnected:
-            data: bytes = self.conneciton.socket.receive_packet()
+            try:
+                data: bytes = self.conneciton.socket.receive_packet()
+
+            except ConnectionResetError:
+                self.disconnect_client()
 
             if not (data):
-                logger.info(f'{self.conneciton.publib_address} ({self.conneciton.hostname}) just leave the server')
-                self.connectionBucket.connectionList.remove(self.conneciton)
-                self.isConnected = False
+                self.disconnect_client()
 
             if (data.startswith(b'submit_additional_data ')):
                 clientAdditionalData: dict = pickle.loads(data[23:])
