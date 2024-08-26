@@ -1,6 +1,7 @@
 from core.sock import NetterServer
 from core.bucket import ConnectionBucket
 from core.command import CommandHandler
+from core.device import ClientDevice
 
 from threading import Thread
 from sys import exit as _exit
@@ -31,5 +32,7 @@ NetServer.commandHandler = commandHandler.command
 Thread(target = NetServer.controller).start()
 
 while NetServer.isRunning:
-    if client := NetServer.accept():
+    client: ClientDevice | None = NetServer.accept()
+
+    if client:
         logger.info(f'{client.publib_address} ({client.hostname}) just hopped onto the server')

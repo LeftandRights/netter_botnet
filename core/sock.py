@@ -11,6 +11,7 @@ class NetterServer(socket.socket):
 
         self.connectionBucket: ConnectionBucket = connectionBucket
         self.commandHandler: Command | None = commandHandler
+
         self._selectedClient: ClientDevice | None = None
         self._waitingForResponse: bool = False
         self.isRunning: bool = True
@@ -43,11 +44,15 @@ class NetterServer(socket.socket):
                     self._selectedClient = None
                     continue
 
-                self.commandHandler.handle_command(command)
+                if (self.commandHandler is not None):
+                    self.commandHandler.handle_command(command)
+
+                else:
+                    loguru.logger.error('Command Handler is not initialized yet')
 
         os._exit(0)
 
-    def accept(self) -> ClientDevice | bool:
+    def accept(self) -> ClientDevice | None:
         connection, connectionAddress = super().accept()
         Client: ClientWrapper = ClientWrapper(connection, connectionAddress)
 
@@ -61,4 +66,4 @@ class NetterServer(socket.socket):
             ClientHandler(device, connectionAddress = connectionAddress, connectionBucket = self.connectionBucket, NetterInstance = self).start()
             return device
 
-        return False
+        return None
