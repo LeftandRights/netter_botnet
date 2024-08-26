@@ -13,9 +13,9 @@ class ClientDevice:
 
     clientUniqueID: str
     additionalData: dict = field(default_factory = dict)
+    stillRecording: bool = False
 
     def load_data(self, client_data: bytes, socketInstance: ClientWrapper, connectionBucket: ConnectionBucket) -> bool:
-        print(self.additionalData)
         self.hostname, self.publib_address, self.local_address = pickle.loads(client_data)
         clientUniqueID: str = hashlib.sha256(str(self.hostname + self.publib_address + self.local_address).encode('UTF-8')).hexdigest()
 

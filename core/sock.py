@@ -63,7 +63,12 @@ class NetterServer(socket.socket):
             )
         ):
 
-            ClientHandler(device, connectionAddress = connectionAddress, connectionBucket = self.connectionBucket, NetterInstance = self).start()
+            ClientHandler(device,
+                connectionAddress = connectionAddress,
+                connectionBucket = self.connectionBucket,
+                NetterInstance = self
+            ).start()
+
             return device
 
         return None
