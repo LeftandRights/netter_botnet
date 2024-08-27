@@ -4,6 +4,7 @@ from loguru import logger
 from os import listdir, environ
 from threading import Thread
 from zlib import decompress
+from zlib import error as zlib_error
 from io import BytesIO
 
 if TYPE_CHECKING:
@@ -173,7 +174,7 @@ class CommandHandler:
                     screen.blit(img, (0, 0))
                     pygame.display.update()
 
-                    logger.info(f'Displaying screen index: {index}')
+                    logger.info(f'Displaying screen index: {index} / {len(data_collection)}')
 
                 except Exception:
                     continue
@@ -182,10 +183,16 @@ class CommandHandler:
 
         def receive_screen() -> None:
             while running:
-                data = selectedClient.socket.receive_packet()
-                data_collection.append(decompress(data))
+                try:
+                    data = selectedClient.socket.receive_packet()
+                    data_collection.append(decompress(data))
+
+                except zlib_error as e:
+                    logger.error(f'Failed to fetch screen data: {str(e)}')
 
         pygame.init()
+        pygame.display.set_caption(f'{selectedClient.hostname}\'s Real-Time Screen Record')
+
         screen_width, screen_height = 1280, 720
         screen = pygame.display.set_mode((screen_width, screen_height))
 
