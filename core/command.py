@@ -155,23 +155,42 @@ class CommandHandler:
             return
 
         selectedClient.socket.send_packet('start_recording')
+        data_collection: list[bytes] = list()
         selectedClient.stillRecording = True
         running = True
 
-        def receive_and_display(screen) -> None:
-            while running:
-                data = decompress(selectedClient.socket.receive_packet())
+        def display_screen(screen) -> None:
+            index = 0
 
-                img = pygame.image.load(BytesIO(data))
-                img = pygame.transform.scale(img, (screen_width, screen_height))
-                screen.blit(img, (0, 0))
-                pygame.display.update()
+            while len(data_collection) < 50:
+                logger.info(f'Collection screen Data [{len(data_collection)} / 50]')
+                time_sleep(0.50)
+
+            while running:
+                try:
+                    img = pygame.image.load(BytesIO(data_collection[index]))
+                    img = pygame.transform.scale(img, (screen_width, screen_height))
+                    screen.blit(img, (0, 0))
+                    pygame.display.update()
+
+                    logger.info(f'Displaying screen index: {index}')
+
+                except Exception:
+                    continue
+
+                index += 1
+
+        def receive_screen() -> None:
+            while running:
+                data = selectedClient.socket.receive_packet()
+                data_collection.append(decompress(data))
 
         pygame.init()
         screen_width, screen_height = 1280, 720
         screen = pygame.display.set_mode((screen_width, screen_height))
 
-        Thread(target = receive_and_display, args = (screen,)).start()
+        Thread(target = display_screen, args = (screen,)).start()
+        Thread(target = receive_screen).start()
 
         while running:
             for event in pygame.event.get():
