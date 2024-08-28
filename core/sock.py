@@ -56,13 +56,9 @@ class NetterServer(socket.socket):
         connection, connectionAddress = super().accept()
         Client: ClientWrapper = ClientWrapper(connection, connectionAddress)
 
-        if ((device := ClientDevice('', '', '', '')).load_data(
-                client_data = Client.receive_packet(),
-                connectionBucket = self.connectionBucket,
-                socketInstance = Client
-            )
-        ):
+        device = ClientDevice(client_data = Client.receive_packet(), connectionBucket = self.connectionBucket, socketInstance = Client)
 
+        if ('_joined' in device.__dict__.keys()):
             ClientHandler(device,
                 connectionAddress = connectionAddress,
                 connectionBucket = self.connectionBucket,

