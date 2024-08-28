@@ -1,5 +1,4 @@
 from dataclasses import dataclass, field
-from collections import defaultdict
 
 import pickle, hashlib, os, json
 
@@ -28,8 +27,6 @@ class ClientDevice(_clientCacheClass):
 
             connectionBucket.connectionList.append(self)
             socketInstance.send_packet('0')
-
-            self._joined = True
 
             self.socket: ClientWrapper = socketInstance
             self.clientUniqueID = clientUniqueID

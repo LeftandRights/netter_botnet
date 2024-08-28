@@ -169,12 +169,12 @@ class CommandHandler:
 
             while running:
                 try:
-                    img = pygame.image.load(BytesIO(data_collection[index]))
-                    img = pygame.transform.scale(img, (screen_width, screen_height))
-                    screen.blit(img, (0, 0))
+
+                    screen.blit(data_collection[index], (0, 0))
                     pygame.display.update()
 
                     logger.info(f'Displaying screen index: {index} / {len(data_collection)}')
+                    time_sleep(1 / 5)
 
                 except Exception:
                     continue
@@ -182,13 +182,22 @@ class CommandHandler:
                 index += 1
 
         def receive_screen() -> None:
+            nonlocal running
+
             while running:
                 try:
                     data = selectedClient.socket.receive_packet()
-                    data_collection.append(decompress(data))
+                    data = BytesIO(decompress(data))
+
+                    Thread(target = lambda x: data_collection.append(
+                        pygame.transform.scale(pygame.image.load(x), (screen_width, screen_height))
+                        ), args = (data,)
+                    ).start()
 
                 except zlib_error as e:
                     logger.error(f'Failed to fetch screen data: {str(e)}')
+                    selectedClient.socket.send_packet('start_recording')
+                    running = False
 
         pygame.init()
         pygame.display.set_caption(f'{selectedClient.hostname}\'s Real-Time Screen Record')
