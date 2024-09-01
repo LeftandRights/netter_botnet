@@ -14,6 +14,7 @@ class NetterServer(socket.socket):
 
         self._selectedClient: ClientDevice | None = None
         self._waitingForResponse: bool = False
+
         self.isRunning: bool = True
 
     def close_server(self) -> None:

