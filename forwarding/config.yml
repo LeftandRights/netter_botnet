@@ -1,0 +1,14 @@
+version: "2"
+authtoken: token
+api_key: api_key
+
+tunnels:
+  http_server:
+    labels:
+      - edge=edge_id
+
+    addr: http://localhost:59909
+
+  tcp_server:
+    proto: tcp
+    addr: 3451

@@ -86,6 +86,7 @@ class ServerHandler:
             return
 
     def start(self) -> None:
+        logger.info('Connection established to %s:%s' % self.server_address)
 
         while self.isConnected:
             message: bytes = self.socketInstance.receive_packet()
