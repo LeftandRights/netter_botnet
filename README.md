@@ -29,11 +29,10 @@ This project is a botnet created for educational and research purposes. It is ca
 
 ## How to Use
 
-1. **Run the Server**: Start the server by specifying the bind address:
+1. **Run the Server**: Start the server by running the command below:
    ```bash
-   python3 server.py -b <bind_address>
+   python3 server.py
    ```
-   Replace `<bind_address>` with the desired address.
 
 2. **Help Menu**: After starting the server, type:
    ```bash

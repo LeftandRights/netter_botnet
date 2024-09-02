@@ -12,11 +12,24 @@ if TYPE_CHECKING:
     from .device import ClientDevice
     from sock import NetterServer
 
+helpCommand: str = """\
+    L bot / bots        :       Show all connected client
+    L info / whois      :       Show client's device information
+    L select            :       Select client, some command requires a client to be selected
+
+    L run               :       Run a shell command
+    L screenshot        :       Take a screenshot of client's monitor
+    L screen_spy        :       Streaming over client's monitor in real-time
+    L file              :       Modify client's file
+    L keylogger         :       Turn on / off keylogger
+"""
+
 class Command:
     _registry: dict[str, list] = dict()
     instance: Optional['CommandHandler'] = None
 
     def __init__(self, connectionBucket: Optional['ConnectionBucket'] = None) -> None:
+        self._registry['help'] = [lambda *x: (logger.info("List of Netter's server controller command are shown below"), print(helpCommand)), False]
         self.connectionBucket = connectionBucket
 
     @classmethod
