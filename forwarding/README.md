@@ -16,7 +16,7 @@ This project uses Ngrok to expose both a web server and a TCP service. The HTTP 
 
 ## Prerequisites
 
-- [Ngrok](https://ngrok.com/) (installed and configured with an API key)
+- [Ngrok](https://ngrok.com/) (Automatically insalled the first main.py is executed)
 - Python 3.x
 
 ## Configuration
