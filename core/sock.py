@@ -1,21 +1,22 @@
-import socket, loguru, os
+import socket, loguru, os, threading
 from .device import ClientDevice, ClientWrapper
 from .bucket import ConnectionBucket
 from .handler import ClientHandler
-from .command import Command
+from .command import Command, CommandHandler
 
 class NetterServer(socket.socket):
-    def __init__(self, connectionBucket: ConnectionBucket, _bind_address: tuple[str, int], commandHandler: Command | None = None, _backlog: int = 10) -> None:
+    def __init__(self, _bind_address: tuple[str, int], _backlog: int = 10) -> None:
         super().__init__(socket.AF_INET, socket.SOCK_STREAM)
         super().bind(_bind_address); super().listen(_backlog)
 
-        self.connectionBucket: ConnectionBucket = connectionBucket
-        self.commandHandler: Command | None = commandHandler
+        self.connectionBucket: ConnectionBucket = ConnectionBucket()
+        self.commandHandler: Command = CommandHandler(self.connectionBucket, self).command
 
         self._selectedClient: ClientDevice | None = None
         self._waitingForResponse: bool = False
 
         self.isRunning: bool = True
+        threading.Thread(target = self.controller).start()
 
     def close_server(self) -> None:
         for client in self.connectionBucket.connectionList:

