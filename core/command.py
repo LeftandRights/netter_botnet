@@ -4,7 +4,6 @@ from time import time as current_time
 
 from loguru import logger
 from os import environ
-from os import path as os_path
 from threading import Thread
 from zlib import decompress
 from zlib import error as zlib_error
